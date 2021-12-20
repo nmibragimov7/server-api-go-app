@@ -3,25 +3,33 @@ package main
 import (
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
-	"github.com/nmibragimov7/go-app-server/src/app/controllers"
+	"github.com/joho/godotenv"
 	"github.com/nmibragimov7/go-app-server/src/app/db"
+	"github.com/nmibragimov7/go-app-server/src/app/routes"
+	"log"
+	"os"
 )
 
 type Config struct {
-	port        string
-	databaseUrl string
+	url string
 }
 
 func NewConfig() *Config {
 	return &Config{
-		port:        ":8080",
-		databaseUrl: "localhost:27017",
+		url: "localhost:8080",
 	}
 }
 
 func main() {
+	err := godotenv.Load("../../.env")
+	if err != nil {
+		log.Fatal("Error loading .env file", err)
+	}
+
+	BackendUrl := os.Getenv("BACKEND_URL")
+
 	config := NewConfig()
-	db.ConnectDB(config.databaseUrl)
+	db.ConnectDB()
 	router := gin.Default()
 
 	corsConfig := cors.DefaultConfig()
@@ -30,10 +38,13 @@ func main() {
 
 	v1 := router.Group("/api")
 	{
-		v1.GET("/products", controllers.GetProducts)
-		v1.POST("/products", controllers.PostProduct)
-		v1.GET("/users", controllers.GetUsers)
+		routes.ProductsRoutes(v1)
+		routes.UsersRoutes(v1)
 	}
 
-	router.Run("localhost" + config.port)
+	if BackendUrl == "" {
+		BackendUrl = config.url
+	}
+
+	router.Run(BackendUrl)
 }
