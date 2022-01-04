@@ -34,12 +34,15 @@ func main() {
 
 	corsConfig := cors.DefaultConfig()
 	corsConfig.AllowOrigins = []string{"*"}
+	corsConfig.AllowMethods = []string{"*"}
+	corsConfig.AllowHeaders = []string{"*"}
 	router.Use(cors.New(corsConfig))
 
 	v1 := router.Group("/api")
 	{
 		routes.ProductsRoutes(v1)
 		routes.UsersRoutes(v1)
+		routes.AuthRoutes(v1)
 	}
 
 	if BackendUrl == "" {

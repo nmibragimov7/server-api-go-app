@@ -36,8 +36,19 @@ func ConnectDB() *mongo.Client {
 		log.Fatal(err)
 	}
 
-	//db := client.Database("test")
-
 	fmt.Println("MongoDB connect successful: ")
 	return client
+}
+
+var Client = ConnectDB()
+
+func OpenDatabase(client *mongo.Client, name string) *mongo.Database {
+	database := client.Database(name)
+	fmt.Println("Database connect successful: ")
+	return database
+}
+
+func OpenCollection(database *mongo.Database, name string) *mongo.Collection {
+	var collection = database.Collection(name)
+	return collection
 }

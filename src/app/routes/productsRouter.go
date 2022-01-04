@@ -6,6 +6,8 @@ import (
 )
 
 func ProductsRoutes(incoming *gin.RouterGroup) {
+	incoming.Use()
 	incoming.GET("/products", controllers.GetProducts)
-	incoming.POST("/products", controllers.PostProduct)
+	incoming.GET("/products/:id", controllers.GetProduct)
+	incoming.POST("/products", controllers.AddProduct)
 }
