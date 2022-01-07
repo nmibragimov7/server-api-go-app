@@ -18,12 +18,21 @@ import (
 
 var UsersCollection = db.OpenCollection(db.OpenDatabase(db.Client, "test"), "users")
 
-func GetProfile(c *gin.Context) {
-	token := c.GetHeader(middleware.AuthorizationHeaderKey)
-	fields := strings.Fields(token)
-	id := fmt.Sprintf("%v", service.Parse(fields[1]))
-	fmt.Println(id)
+const (
+	tokenExpiresAt   = time.Hour
+	refreshExpiresAt = time.Hour * 3
+)
 
+func ParseHeader(c *gin.Context) string {
+	tokenHeader := c.GetHeader(middleware.AuthorizationHeaderKey)
+	fields := strings.Fields(tokenHeader)
+	id := fmt.Sprintf("%v", service.Parse(fields[1]))
+
+	return id
+}
+
+func GetProfile(c *gin.Context) {
+	id := ParseHeader(c)
 	objectId, _ := primitive.ObjectIDFromHex(id)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -31,15 +40,14 @@ func GetProfile(c *gin.Context) {
 
 	var user models.User
 	err := UsersCollection.FindOne(ctx, bson.M{"_id": objectId}).Decode(&user)
-
-	fmt.Println(user)
+	userCopy := user.BeforeSend()
 
 	if err != nil {
 		fmt.Println(err)
-		c.JSON(http.StatusNotFound, gin.H{"error": "Пользователь найден"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "Пользователь не найден!"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{"profile": user})
+	c.JSON(http.StatusOK, gin.H{"profile": userCopy})
 }
 
 func GetUsers(c *gin.Context) {
@@ -48,7 +56,9 @@ func GetUsers(c *gin.Context) {
 
 	cursor, err := UsersCollection.Find(ctx, bson.M{})
 	if err != nil {
-		log.Fatal(err)
+		fmt.Println(err)
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
 	}
 
 	defer cursor.Close(ctx)
@@ -73,13 +83,14 @@ func GetUser() gin.HandlerFunc {
 
 		var user models.User
 		err := UsersCollection.FindOne(ctx, bson.M{"_id": objectId}).Decode(&user)
+		userCopy := user.BeforeSend()
 
 		if err != nil {
 			fmt.Println(err)
-			c.JSON(http.StatusNotFound, gin.H{"error": "Пользователь найден"})
+			c.JSON(http.StatusNotFound, gin.H{"error": "Пользователь не найден!"})
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"user": user})
+		c.JSON(http.StatusOK, gin.H{"user": userCopy})
 	}
 }
 
@@ -99,20 +110,21 @@ func SignIn(c *gin.Context) {
 	err := UsersCollection.FindOne(ctx, bson.M{"username": body.Username}).Decode(&user)
 	if err != nil {
 		fmt.Println(err)
-		c.JSON(http.StatusNotFound, gin.H{"error": "Неверный логин и пароль"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "Неверный логин или пароль!"})
 		return
 	}
 
 	if user.ComparePassword(body.Password) {
-		var tokenExpiresAt = time.Hour
-		var refreshExpiresAt = time.Hour * 3
-
-		token, err := service.JwtCreate(user.ID.Hex(), tokenExpiresAt)
-		refresh, err := service.JwtCreate(user.ID.Hex(), refreshExpiresAt)
-		if err != nil {
-			log.Fatal(err)
+		token, errToken := service.JwtCreate(user.ID.Hex(), tokenExpiresAt)
+		if errToken != nil {
+			fmt.Println(errToken)
+			return
 		}
-		fmt.Println(token)
+		refresh, errRefresh := service.JwtCreate(user.ID.Hex(), refreshExpiresAt)
+		if errRefresh != nil {
+			fmt.Println(errRefresh)
+			return
+		}
 		c.JSON(http.StatusOK, gin.H{
 			"token":           token,
 			"tokenExpireAt":   time.Now().Add(tokenExpiresAt),
@@ -120,7 +132,7 @@ func SignIn(c *gin.Context) {
 			"refreshExpireAt": time.Now().Add(refreshExpiresAt),
 		})
 	} else {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный логин и пароль"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный логин или пароль!"})
 	}
 }
 
@@ -145,8 +157,8 @@ func SingUp(c *gin.Context) {
 	}
 
 	user, err := UsersCollection.InsertOne(ctx, bson.D{
-		{"first_name", body.FirstName},
-		{"last_name", body.LastName},
+		{"firstName", body.FirstName},
+		{"lastName", body.LastName},
 		{"username", body.Username},
 		{"password", encrypt},
 		{"role", "user"},
@@ -162,4 +174,96 @@ func SingUp(c *gin.Context) {
 		"user":    user,
 		"message": "Пользователь успешно зарегистрирован!",
 	})
+}
+
+func Refresh(c *gin.Context) {
+	id := ParseHeader(c)
+	objectId, _ := primitive.ObjectIDFromHex(id)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	var user models.User
+	err := UsersCollection.FindOne(ctx, bson.M{"_id": objectId}).Decode(&user)
+
+	if err != nil {
+		fmt.Println(err)
+		c.JSON(http.StatusNotFound, gin.H{"error": "Пользователь не найден!"})
+		return
+	}
+
+	token, errToken := service.JwtCreate(user.ID.Hex(), tokenExpiresAt)
+	if errToken != nil {
+		fmt.Println(errToken)
+		return
+	}
+	refresh, errRefresh := service.JwtCreate(user.ID.Hex(), refreshExpiresAt)
+	if errRefresh != nil {
+		fmt.Println(errRefresh)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"token":           token,
+		"tokenExpireAt":   time.Now().Add(tokenExpiresAt),
+		"refresh":         refresh,
+		"refreshExpireAt": time.Now().Add(refreshExpiresAt),
+	})
+}
+
+func EditUser(c *gin.Context) {
+	var body models.User
+
+	if err := c.BindJSON(&body); err != nil {
+		fmt.Println(err)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   err.Error(),
+			"message": "Неверный тип данных!",
+		})
+		return
+	}
+
+	id := c.Param("id")
+	objectId, _ := primitive.ObjectIDFromHex(id)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	_, err := UsersCollection.UpdateOne(ctx, bson.M{"_id": objectId}, bson.D{{"$set", bson.D{
+		{"firstName", body.FirstName},
+		{"lastName", body.LastName},
+		{"username", body.Username},
+		{"role", body.Role},
+		{"updatedAt", time.Now()},
+	}}})
+
+	if err != nil {
+		fmt.Println(err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Произошла ошибка при обновлении!"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Пользователь обновлен успешно!"})
+}
+
+func DeleteUser(c *gin.Context) {
+	id := c.Param("id")
+	objectId, _ := primitive.ObjectIDFromHex(id)
+
+	headerId := ParseHeader(c)
+	objectHeaderId, _ := primitive.ObjectIDFromHex(headerId)
+
+	if objectHeaderId == objectId {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Отказано в удалении!"})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	_, err := UsersCollection.DeleteOne(ctx, bson.M{"_id": objectId})
+	if err != nil {
+		fmt.Println(err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Произошла ошибка при удалении!"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Пользователь успешно удален!"})
 }

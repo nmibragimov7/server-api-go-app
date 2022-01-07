@@ -16,29 +16,28 @@ func AuthMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		token := c.GetHeader(AuthorizationHeaderKey)
 		if len(token) == 0 {
-			c.JSON(http.StatusUnauthorized, gin.H{"message": "Пользователь не авторизован"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Пользователь не авторизован!"})
 			c.Abort()
 			return
 		}
 
 		fields := strings.Fields(token)
 		if len(fields) < 2 {
-			c.JSON(http.StatusBadRequest, gin.H{"message": "Неправильный формат токена"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Неправильный формат токена!"})
 			c.Abort()
 			return
 		}
 
 		tokenType := strings.ToLower(fields[0])
 		if tokenType != AuthorizationType {
-			c.JSON(http.StatusBadRequest, gin.H{"message": "Неподдерживаемый тип токена"})
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Неподдерживаемый тип токена!"})
 			c.Abort()
 			return
 		}
 
 		access := service.Verify(fields[1])
-
 		if access == false {
-			c.JSON(http.StatusUnauthorized, gin.H{"message": "Пользователь не авторизован"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Отказано в доступе!"})
 			c.Abort()
 			return
 		}

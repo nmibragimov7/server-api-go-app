@@ -43,6 +43,7 @@ func main() {
 		routes.ProductsRoutes(v1)
 		routes.UsersRoutes(v1)
 		routes.AuthRoutes(v1)
+		routes.GroupsRoutes(v1)
 	}
 
 	if BackendUrl == "" {
