@@ -8,9 +8,9 @@ import (
 
 func UsersRoutes(incoming *gin.RouterGroup) {
 	routes := incoming.Group("").Use(middleware.AuthMiddleware())
-	routes.GET("/me", controllers.GetProfile)
 	routes.GET("/users", controllers.GetUsers)
 	routes.PUT("/users/:id", controllers.EditUser)
 	routes.DELETE("/users/:id", controllers.DeleteUser)
+	routes.POST("/users", controllers.AddUser)
 	routes.GET("/users/:id", controllers.GetUser())
 }

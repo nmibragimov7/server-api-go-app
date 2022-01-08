@@ -10,7 +10,6 @@ import (
 	"github.com/nmibragimov7/go-app-server/src/app/service"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
-	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -48,6 +47,38 @@ func GetProfile(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"profile": userCopy})
+}
+
+func EditProfile(c *gin.Context) {
+	var body models.User
+
+	if err := c.BindJSON(&body); err != nil {
+		fmt.Println(err)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   err.Error(),
+			"message": "Неверный тип данных!",
+		})
+		return
+	}
+
+	id := ParseHeader(c)
+	objectId, _ := primitive.ObjectIDFromHex(id)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	_, err := UsersCollection.UpdateOne(ctx, bson.M{"_id": objectId}, bson.D{{"$set", bson.D{
+		{"firstName", body.FirstName},
+		{"lastName", body.LastName},
+		{"updatedAt", time.Now()},
+	}}})
+
+	if err != nil {
+		fmt.Println(err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Произошла ошибка при обновлении!"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Профиль обновлен успешно!"})
 }
 
 func GetUsers(c *gin.Context) {
@@ -99,7 +130,10 @@ func SignIn(c *gin.Context) {
 
 	if err := c.BindJSON(&body); err != nil {
 		fmt.Println(err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   err.Error(),
+			"message": "Неверный тип данных!",
+		})
 		return
 	}
 
@@ -136,6 +170,65 @@ func SignIn(c *gin.Context) {
 	}
 }
 
+func ChangePassword(c *gin.Context) {
+	type Password struct {
+		Password    string `json:"password"`
+		NewPassword string `json:"newPassword"`
+	}
+	var body Password
+	if err := c.BindJSON(&body); err != nil {
+		fmt.Println(err)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   err.Error(),
+			"message": "Неверный тип данных!",
+		})
+		return
+	}
+
+	id := ParseHeader(c)
+	objectId, _ := primitive.ObjectIDFromHex(id)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	var user models.User
+	err := UsersCollection.FindOne(ctx, bson.M{"_id": objectId}).Decode(&user)
+	if err != nil {
+		fmt.Println(err)
+		c.JSON(http.StatusNotFound, gin.H{"error": "Пользователь не найден!"})
+		return
+	}
+
+	if user.ComparePassword(body.NewPassword) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Новый пароль аналогичен последнему паролю!"})
+		return
+	}
+
+	if user.ComparePassword(body.Password) {
+		encrypt, err := models.EncryptPassword(body.NewPassword)
+		if err != nil {
+			fmt.Println(err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		_, err = UsersCollection.UpdateOne(ctx, bson.M{"_id": objectId}, bson.D{{"$set", bson.D{
+			{"password", encrypt},
+			{"updatedAt", time.Now()},
+		}}})
+		if err != nil {
+			fmt.Println(err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Произошла ошибка при обновлении пароля!"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{"message": "Пароль обновлен успешно!"})
+	} else {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Неверный пароль!"})
+	}
+
+}
+
 func SingUp(c *gin.Context) {
 	var body models.User
 
@@ -143,7 +236,7 @@ func SingUp(c *gin.Context) {
 		fmt.Println(err)
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":   err.Error(),
-			"message": "Неверный тип данных",
+			"message": "Неверный тип данных!",
 		})
 		return
 	}
@@ -153,7 +246,9 @@ func SingUp(c *gin.Context) {
 
 	encrypt, err := models.EncryptPassword(body.Password)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Println(err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 
 	user, err := UsersCollection.InsertOne(ctx, bson.D{
@@ -165,11 +260,12 @@ func SingUp(c *gin.Context) {
 		{"createdAt", time.Now()},
 		{"updatedAt", time.Now()},
 	})
-
 	if err != nil {
-		log.Fatal(err)
-		c.IndentedJSON(http.StatusForbidden, err)
+		fmt.Println(err)
+		c.IndentedJSON(http.StatusBadRequest, err)
+		return
 	}
+
 	c.JSON(http.StatusOK, gin.H{
 		"user":    user,
 		"message": "Пользователь успешно зарегистрирован!",
@@ -235,12 +331,12 @@ func EditUser(c *gin.Context) {
 		{"role", body.Role},
 		{"updatedAt", time.Now()},
 	}}})
-
 	if err != nil {
 		fmt.Println(err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Произошла ошибка при обновлении!"})
 		return
 	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "Пользователь обновлен успешно!"})
 }
 
@@ -266,4 +362,49 @@ func DeleteUser(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"message": "Пользователь успешно удален!"})
+}
+
+func AddUser(c *gin.Context) {
+	var body models.User
+
+	if err := c.BindJSON(&body); err != nil {
+		fmt.Println(err)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":   err.Error(),
+			"message": "Неверный тип данных!",
+		})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	encrypt, err := models.EncryptPassword(body.Username)
+	if err != nil {
+		fmt.Println(err)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	user, err := UsersCollection.InsertOne(ctx, bson.D{
+		{"firstName", body.FirstName},
+		{"lastName", body.LastName},
+		{"username", body.Username},
+		{"password", encrypt},
+		{"role", body.Role},
+		{"createdAt", time.Now()},
+		{"updatedAt", time.Now()},
+	})
+	if err != nil {
+		fmt.Println(err)
+		c.IndentedJSON(http.StatusBadRequest, err)
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"user":    user,
+		"message": "Пользователь успешно зарегистрирован!",
+	})
 }

@@ -73,11 +73,22 @@ func DeleteGroup(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	_, err := groupsCollection.DeleteOne(ctx, bson.M{"_id": objectId})
+	var group models.Group
+	err := groupsCollection.FindOne(ctx, bson.M{"_id": objectId}).Decode(&group)
+
+	_, err = groupsCollection.DeleteOne(ctx, bson.M{"_id": objectId})
 	if err != nil {
 		fmt.Println(err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Произошла ошибка при удалении!"})
 		return
 	}
+
+	_, err = productsCollection.DeleteMany(ctx, bson.M{"group": group.Name})
+	if err != nil {
+		fmt.Println(err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Произошла ошибка при удалении продуктов!"})
+		return
+	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "Группа успешно удалена!"})
 }
