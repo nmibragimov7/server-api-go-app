@@ -11,7 +11,10 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"log"
+	"math/rand"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 )
 
@@ -100,6 +103,17 @@ func GetProducts(c *gin.Context) {
 	var cursor *mongo.Cursor
 	var err error = nil
 
+	//////////
+	//data := []byte("sdmfdsmkds")
+	//file, err := os.Create(strconv.Itoa(rand.Int()) + ".txt")
+	//fmt.Println(file)
+	////err := ioutil.WriteFile(strconv.Itoa(rand.Int()), data, 0600)
+	//if err != nil {
+	//	log.Fatal(err)
+	//	c.IndentedJSON(http.StatusForbidden, err)
+	//}
+	////////
+
 	if group != "" {
 		cursor, err = productsCollection.Find(ctx, bson.M{"group": group})
 	} else {
@@ -133,6 +147,8 @@ func GetProduct(c *gin.Context) {
 	var product models.Product
 	err := productsCollection.FindOne(ctx, bson.M{"_id": objectId}).Decode(&product)
 
+	fmt.Println(product)
+
 	if err != nil {
 		fmt.Println(err)
 		c.JSON(http.StatusNotFound, gin.H{"error": "Товар не найден!"})
@@ -142,14 +158,26 @@ func GetProduct(c *gin.Context) {
 }
 
 func AddProduct(c *gin.Context) {
-	var body models.Product
+	//var body models.Product
+	//
+	//if err := c.BindJSON(&body); err != nil {
+	//	fmt.Println(err)
+	//	c.JSON(http.StatusBadRequest, gin.H{
+	//		"error":   err.Error(),
+	//		"message": "Неверный тип данных",
+	//	})
+	//	//return
+	//}
 
-	if err := c.BindJSON(&body); err != nil {
+	file, _ := c.FormFile("file")
+	//log.Println(file.Filename)
+	//pathname, _ := os.DirFS("/assets").Open("5577006791947779410")
+	//fmt.Println(pathname)
+
+	filename := strconv.Itoa(rand.Int())
+	if err := c.SaveUploadedFile(file, filename+"."+strings.Split(file.Header.Get("Content-Type"), "/")[1]); err != nil {
 		fmt.Println(err)
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":   err.Error(),
-			"message": "Неверный тип данных",
-		})
+		c.IndentedJSON(http.StatusInternalServerError, err)
 		return
 	}
 
@@ -163,10 +191,14 @@ func AddProduct(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	price := 0
+	fmt.Sscanf(c.PostForm("price"), "%d", &price)
+
 	_, err := productsCollection.InsertOne(ctx, bson.D{
-		{"title", body.Title},
-		{"price", body.Price},
-		{"group", body.Group},
+		{"title", c.PostForm("title")},
+		{"price", price},
+		{"group", c.PostForm("group")},
+		{"file", filename},
 	})
 
 	if err != nil {
