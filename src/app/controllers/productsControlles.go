@@ -5,15 +5,15 @@ import (
 	"fmt"
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
+	gonanoid "github.com/matoous/go-nanoid/v2"
 	"github.com/nmibragimov7/go-app-server/src/app/db"
 	"github.com/nmibragimov7/go-app-server/src/app/models"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"log"
-	"math/rand"
 	"net/http"
-	"strconv"
+	"os"
 	"strings"
 	"time"
 )
@@ -67,7 +67,7 @@ func GetCounts(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 		return
 	}
-	counts = append(counts, Item{"all", len(products)})
+	counts = append(counts, Item{"все-товары", len(products)})
 
 	for _, group := range groups {
 		cursor, err = productsCollection.Find(ctx, bson.M{"group": group.Name})
@@ -147,8 +147,6 @@ func GetProduct(c *gin.Context) {
 	var product models.Product
 	err := productsCollection.FindOne(ctx, bson.M{"_id": objectId}).Decode(&product)
 
-	fmt.Println(product)
-
 	if err != nil {
 		fmt.Println(err)
 		c.JSON(http.StatusNotFound, gin.H{"error": "Товар не найден!"})
@@ -158,35 +156,15 @@ func GetProduct(c *gin.Context) {
 }
 
 func AddProduct(c *gin.Context) {
-	//var body models.Product
-	//
-	//if err := c.BindJSON(&body); err != nil {
-	//	fmt.Println(err)
-	//	c.JSON(http.StatusBadRequest, gin.H{
-	//		"error":   err.Error(),
-	//		"message": "Неверный тип данных",
-	//	})
-	//	//return
-	//}
-
 	file, _ := c.FormFile("file")
-	//log.Println(file.Filename)
-	//pathname, _ := os.DirFS("/assets").Open("5577006791947779410")
-	//fmt.Println(pathname)
+	id, _ := gonanoid.New()
 
-	filename := strconv.Itoa(rand.Int())
-	if err := c.SaveUploadedFile(file, filename+"."+strings.Split(file.Header.Get("Content-Type"), "/")[1]); err != nil {
+	filename := id + "." + strings.Split(file.Header.Get("Content-Type"), "/")[1]
+	if err := c.SaveUploadedFile(file, "../../assets/images/"+filename); err != nil {
 		fmt.Println(err)
 		c.IndentedJSON(http.StatusInternalServerError, err)
 		return
 	}
-
-	//err := validate.Struct(body)
-	//if err != nil {
-	//	log.Fatal(err)
-	//	c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-	//	return
-	//}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -209,16 +187,20 @@ func AddProduct(c *gin.Context) {
 }
 
 func EditProduct(c *gin.Context) {
-	var body models.Product
+	//var body models.Product
+	//
+	//if err := c.BindJSON(&body); err != nil {
+	//	fmt.Println(err)
+	//	c.JSON(http.StatusBadRequest, gin.H{
+	//		"error":   err.Error(),
+	//		"message": "Неверный тип данных!",
+	//	})
+	//	return
+	//}
 
-	if err := c.BindJSON(&body); err != nil {
-		fmt.Println(err)
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":   err.Error(),
-			"message": "Неверный тип данных!",
-		})
-		return
-	}
+	price := 0
+	fmt.Sscanf(c.PostForm("price"), "%d", &price)
+	fileName := c.PostForm("file")
 
 	id := c.Param("id")
 	objectId, _ := primitive.ObjectIDFromHex(id)
@@ -226,17 +208,60 @@ func EditProduct(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	_, err := productsCollection.UpdateOne(ctx, bson.M{"_id": objectId}, bson.D{{"$set", bson.D{
-		{"title", body.Title},
-		{"price", body.Price},
-		{"group", body.Group},
-	}}})
+	var product models.Product
+	err := productsCollection.FindOne(ctx, bson.M{"_id": objectId}).Decode(&product)
 
 	if err != nil {
 		fmt.Println(err)
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Произошла ошибка при обновлении!"})
+		c.JSON(http.StatusNotFound, gin.H{"error": "Товар не найден!"})
 		return
 	}
+
+	if product.File == fileName {
+		_, err = productsCollection.UpdateOne(ctx, bson.M{"_id": objectId}, bson.D{{"$set", bson.D{
+			{"title", c.PostForm("title")},
+			{"price", price},
+			{"group", c.PostForm("group")},
+		}}})
+
+		if err != nil {
+			fmt.Println(err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Произошла ошибка при обновлении!"})
+			return
+		}
+	} else {
+		file, _ := c.FormFile("file")
+		id, _ := gonanoid.New()
+
+		filename := id + "." + strings.Split(file.Header.Get("Content-Type"), "/")[1]
+		if err := c.SaveUploadedFile(file, "../../assets/images/"+filename); err != nil {
+			fmt.Println(err)
+			c.IndentedJSON(http.StatusInternalServerError, err)
+			return
+		}
+		fmt.Println(filename)
+
+		_, err = productsCollection.UpdateOne(ctx, bson.M{"_id": objectId}, bson.D{{"$set", bson.D{
+			{"title", c.PostForm("title")},
+			{"price", price},
+			{"group", c.PostForm("group")},
+			{"file", filename},
+		}}})
+
+		if err != nil {
+			fmt.Println(err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Произошла ошибка при обновлении!"})
+			return
+		} else {
+			err := os.Remove("../../assets/images/" + product.File)
+
+			if err != nil {
+				fmt.Println(err)
+				return
+			}
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "Товар обновлен успешно!"})
 }
 
@@ -247,11 +272,28 @@ func DeleteProduct(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	_, err := productsCollection.DeleteOne(ctx, bson.M{"_id": objectId})
+	var product models.Product
+	err := productsCollection.FindOne(ctx, bson.M{"_id": objectId}).Decode(&product)
+
+	if err != nil {
+		fmt.Println(err)
+		c.JSON(http.StatusNotFound, gin.H{"error": "Товар не найден!"})
+		return
+	}
+
+	_, err = productsCollection.DeleteOne(ctx, bson.M{"_id": objectId})
 	if err != nil {
 		fmt.Println(err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Произошла ошибка при удалении!"})
 		return
+	} else {
+		err := os.Remove("../../assets/images/" + product.File)
+
+		if err != nil {
+			fmt.Println(err)
+			return
+		}
 	}
+
 	c.JSON(http.StatusOK, gin.H{"message": "Товар успешно удален!"})
 }

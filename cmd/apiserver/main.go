@@ -37,6 +37,7 @@ func main() {
 	corsConfig.AllowMethods = []string{"*"}
 	corsConfig.AllowHeaders = []string{"*"}
 	router.Use(cors.New(corsConfig))
+	router.Static("/static", "../../assets/images/")
 
 	v1 := router.Group("/api")
 	{

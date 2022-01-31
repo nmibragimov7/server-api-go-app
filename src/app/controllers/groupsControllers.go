@@ -35,6 +35,7 @@ func GetGroups(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": err.Error()})
 		return
 	}
+	fmt.Println(groups)
 
 	c.JSON(http.StatusOK, gin.H{"groups": groups})
 }
