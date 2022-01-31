@@ -103,17 +103,6 @@ func GetProducts(c *gin.Context) {
 	var cursor *mongo.Cursor
 	var err error = nil
 
-	//////////
-	//data := []byte("sdmfdsmkds")
-	//file, err := os.Create(strconv.Itoa(rand.Int()) + ".txt")
-	//fmt.Println(file)
-	////err := ioutil.WriteFile(strconv.Itoa(rand.Int()), data, 0600)
-	//if err != nil {
-	//	log.Fatal(err)
-	//	c.IndentedJSON(http.StatusForbidden, err)
-	//}
-	////////
-
 	if group != "" {
 		cursor, err = productsCollection.Find(ctx, bson.M{"group": group})
 	} else {
